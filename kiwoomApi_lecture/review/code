@@ -1,0 +1,82 @@
+[__init__.py]
+
+from ui.ui import * # ui 폴더의 ui 파일에서(from), 모든(*) 클래스를 가져오겠다(import)
+
+class Main():
+    def __init__(self):
+    print("실행할 메인 클래스")
+
+if __name__ == "__main__": # 클래스를 만들 때 print(__name__) 해보면 __main__ 이 나옴
+    Main()
+
+
+[ui.py]
+
+from kiwoom.kiwoom import *
+import sys
+from PyQt5.Qtwidgets import *
+
+class Ui():
+    def __init__(self):
+        print("Ui 클래스 입니다.")
+
+        self.app = QApplication(sys.argv) # 우선, app을 장바구니에 담는데.. QApplication으로 한다.. 아마 Qtwidgets에 있는 클래스 일듯. QApplication은 ui를 실행하기 위해서 필요한 함수나 변수들을 초기화 시켜주는 용도로 생각하면 됨
+        # 어떤 파일들을 실행시켜서 앱 용도로 쓸거냐 -> import sys
+        # sys.argv: 파이썬 명령행 인자 받기?
+        # sys는 파이썬 인터프리터와 관련된 정보와 기능을 제공하는 모듈 혹은 라이브러리
+        # argv는 argument vector
+        # import sys -> pirnt(sys.argv) -> [경로, 인자값1, 인자값2, ...]
+
+        self.kiwoom = Kiwoom()
+
+        self.app.exec_() # 열려있는 동안에 거래를 계속해야 함. 프로그램이 꺼지면 안 됨. 실행 유지
+
+[kiwoom.py]
+
+from PyQt5.QAxContainer import *
+from PyQt5.QtCore import *
+from config.errorCode import *
+
+class Kiwoom(QAxWidget): # 상속: QAxWidget을 상속 받음
+    def __init__(self):
+        super().__init__() # 상속 받은 QAxWidget의 초기값도 받음
+        print("Kiwoom 클래스 입니다.")
+
+        ### eventloop 모음
+        self.login_event_loop = None # None 데이터 아무것도 없다
+        ###
+
+        ### 변수 모음
+        self.account_num = None
+        ###
+
+        self.get_ocx_instance()
+        self.event_slots()
+
+        self.signal_login_commConnect()
+        self.get_account_info()
+
+    def get_ocx_instance(self):
+        self.setControl("KHOPENAPI.KHOpenAPICtrl.1")
+        # 키움증권에서 설치한 것은 ocx 방식의 컴포넌트 객체로 설치가 되어 있음, 레지스트리에 KHOPENAPI.KHOpenAPICtrl.1로 설치되어 있음
+        # 응용프로그램에서 키움 open api를 실행할 수 있게 한 것이라는 의미, 즉 제어가 가능하다!
+        # 파이썬에서 제어가 가능하게끔 가져와야 한다! from PyQt5.QAxContainer import *
+        # 위의 함수를 실행함으로써 파이썬에서 제어 가능해짐
+
+    def event_slots(self): # 이벤트들만 모아두는 구역을 만들어줌
+        self.OnEventConnect.connect(self.login_slot) # KOA에서 OnEventConnect는 로그인 처리 이벤트, 내가 임의로 만든 슬롯 구역에다가 (login_slot) 결과값을 던져줄 것이다...
+
+    def signal_login_commConnect(self):
+        self.dynamicCall("CommConnect()") # dynamicCall은 pyqt에서 제공하는 것, 데이터를 전송할 수 있게끔 만들어준 함수
+        # CommConnect()는 KOA에서 로그인창 출력 또는 로그인 시도하는 함수
+
+        # 이대로만 하면 오류 발생: opstarter 핸들값이 없습니다. 키움에 로그인을 요청했는데, 프로그램 상에서는 로그인 요청 했으니 할 일이 끝났고, 다음 코드로 넘어가려고 함. 로그인 성공이 된 게 슬롯 자체가 반환이 안됐음. 다음 게 실행되려고 하니깐 오류
+        # 해결: 이 때 필요한 게 pyqt에서 제공하는 이벤트루프 클래스: from PyQt5.QtCore import *
+
+        self.login_event_loop = QEventLoop() # 이 한 줄로 해결
+        self.login_event_loop.exec_() # 이벤트루프 안에서 활성화가 되고, 로그인이 완료될 때까지 다음 코드가 실행이 안 됨(login_slot이 실행이 안된다는 의미인듯..?)
+    
+    def login_slot(self, errCode): # KOA에 보면 결과값으로 인자 하나를 받는다고 했으니깐 errCode로 설정(0이면 성공)
+        print(errors(errCode)) # errors는 errorCode.py에서 정의
+
+        self.login_event_loop.exit() # 이벤트루프에서 로그인 완료되면 exit
