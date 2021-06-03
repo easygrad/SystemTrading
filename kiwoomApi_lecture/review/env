@@ -1,7 +1,7 @@
 1. 가상환경 설정
 
 anaconda prompt 실행
-conda info -envs # 가상환경 목록 정보
+conda info --envs # 가상환경 목록 정보
 set CONDA_FORCE_32BIT=1 # 32비트
 conda create -n 가상환경이름 # 가상환경 생성
 conda create -n 가상환경이름 python=버전 # 파이썬도 같이 설치?
