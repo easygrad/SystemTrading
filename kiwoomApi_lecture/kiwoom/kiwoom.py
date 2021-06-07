@@ -1,13 +1,19 @@
+import os
+
 from PyQt5.QAxContainer import *
 from PyQt5.QtCore import *
 from PyQt5.QtTest import *
 from config.errorCode import *
+from config.kiwoomType import *
+
 
 class Kiwoom(QAxWidget):
     def __init__(self):
         super().__init__()
 
         print("Kiwoom 클래스 입니다.")
+
+        self.realType = RealType()
 
         ### eventloop 모음
         self.login_event_loop = None
@@ -18,12 +24,17 @@ class Kiwoom(QAxWidget):
         ### 스크린번호 모음
         self.screen_my_info = "2000"
         self.screen_calculation_stock = "4000"
+        self.screen_real_stock = "5000" # 종목별로 할당할 스크린 번호
+        self.screen_meme_stock = "6000" # 종목별로 할당할 주문용 스크린 번호
+        self.screen_start_stop_real = "1000"
         ###
 
         ### 변수 모음
         self.account_num = None
         self.account_stock_dict = {}
         self.not_account_stock_dict = {}
+        self.portfolio_stock_dict = {}
+        self.jango_dict = {}
         ###
 
         ### 계좌 관련 변수
@@ -37,6 +48,7 @@ class Kiwoom(QAxWidget):
 
         self.get_ocx_instance()
         self.event_slots()
+        self.real_event_slots()
 
         self.signal_login_commConnect()
         self.get_account_info()
@@ -44,7 +56,19 @@ class Kiwoom(QAxWidget):
         self.detail_account_mystock()
         self.not_concluded_account()
 
-        self.calculator_fnc() # 종목 분석용, 임시용
+        # self.calculator_fnc() # 종목 분석용, 임시용
+
+        self.read_code() # 저장된 종목들 불러오기
+        self.screen_number_setting() # 스크린 번호를 할당
+
+        # [SetRealReg() 함수] 종목코드와 FID 리스트를 이용해서 실시간 시세를 등록하는 함수입니다.
+        self.dynamicCall("SetRealReg(QString, QString, QString, QString)", self.screen_start_stop_real, "", self.realType.REALTYPE["장시작시간"]["장운영구분"], "0") # 종목코드를 공란으로 두면 장시간 확인용. 맨 마지막에 실시간 등록 타입 0은 초기 등록시에.. 그 외에는 다 1로 등록
+        for code in self.portfolio_stock_dict.keys():
+            screen_num = self.portfolio_stock_dict[code]["스크린번호"]
+            fids = self.realType.REALTYPE["주식체결"]["체결시간"]
+            self.dynamicCall("SetRealReg(QString, QString, QString, QString)", screen_num, code, fids, "1") # 추가등록이기 때문에 1
+            print("실시간 등록 코드: %s, 스크린번호: %s, FID 번호: %s" % (code, screen_num, fids))
+
 
     def get_ocx_instance(self):
         self.setControl("KHOPENAPI.KHOpenAPICtrl.1")
@@ -52,6 +76,10 @@ class Kiwoom(QAxWidget):
     def event_slots(self):
         self.OnEventConnect.connect(self.login_slot) # [OnEventConnect()이벤트] 로그인 처리 이벤트입니다. 성공이면 인자값 nErrCode가 0이며 에러는 다음과 같은 값이 전달됩니다.
         self.OnReceiveTrData.connect(self.trdata_slot) # [OnReceiveTrData() 이벤트] 요청했던 조회데이터를 수신했을때 발생됩니다. 앞으로 모든 TR데이터는 여기에 받을 것
+
+    def real_event_slots(self):
+        self.OnReceiveRealData.connect(self.realdata_slot)
+        self.OnReceiveChejanData.connect(self.chejan_slot)
 
     def signal_login_commConnect(self):
         self.dynamicCall("CommConnect()")
@@ -371,3 +399,187 @@ class Kiwoom(QAxWidget):
 
         self.calculator_event_loop.exec_()
         
+
+    def read_code(self):
+        if os.path.exists("files/condition_stock.txt"):
+            f = open("files/condition_stock.txt", "r", encoding="utf8")
+
+            lines = f.readlines()
+            for line in lines:
+                if line != "":
+                    ls = line.split("\t")
+                    
+                    stock_code = ls[0]
+                    stock_name = ls[1]
+                    stock_price = int(ls[2].split("\n")[0]) # 마지막에 엔터가 붙어있기 때문에 엔터로 나눠주고 앞부분을 픽
+                    stock_price = abs(stock_price) # 하락 중일 경우 현재가에 마이너스가 붙어서 나옴
+
+                    self.portfolio_stock_dict.update({stock_code:{"종목명":stock_name, "현재가":stock_price}})
+
+            f.close()
+            print(self.portfolio_stock_dict)
+
+
+    def screen_number_setting(self):
+        screen_overwrite = []
+
+        # 계좌평가잔고내역에 있는 종목들
+        for code in self.account_stock_dict.keys():
+            if code not in screen_overwrite:
+                screen_overwrite.append(code)
+
+        # 미체결에 있는 종목들
+        for order_number in self.not_account_stock_dict.keys():
+            code = self.not_account_stock_dict[order_number]['종목코드']
+
+            if code not in screen_overwrite:
+                screen_overwrite.append(code)
+
+        # 포트폴리오에 담겨있는 종목들
+        for code in self.portfolio_stock_dict.keys():
+            if code not in screen_overwrite:
+                screen_overwrite.append(code)
+
+        # 스크린번호 할당
+        cnt = 0
+        for code in screen_overwrite:
+
+            temp_screen = int(self.screen_real_stock)
+            meme_screen = int(self.screen_meme_stock)
+
+            if (cnt % 50) == 0:
+                temp_screen += 1
+                self.screen_real_stock = str(temp_screen)
+
+            if (cnt % 50) == 0:
+                meme_screen += 1
+                self.screen_meme_stock = str(meme_screen)
+
+            if code in self.portfolio_stock_dict.keys():
+                self.portfolio_stock_dict[code].update({"스크린번호": str(self.screen_real_stock)})
+                self.portfolio_stock_dict[code].update({"주문용스크린번호": str(self.screen_meme_stock)})
+
+            elif code not in self.portfolio_stock_dict.keys():
+                self.portfolio_stock_dict.update({code: {"스크린번호":str(self.screen_real_stock), "주문용스크린번호": str(self.screen_meme_stock)}})
+
+            cnt += 1
+
+        print(self.portfolio_stock_dict)
+
+    # [OnReceiveRealData()이벤트] 실시간시세 데이터가 수신될때마다 종목단위로 발생됩니다. SetRealReg()함수로 등록한 실시간 데이터도 이 이벤트로 전달됩니다. GetCommRealData()함수를 이용해서 수신된 데이터를 얻을수 있습니다.
+    def realdata_slot(self, sCode, sRealType, sRealData):
+        
+        if sRealType == "장시작시간":
+            fid = self.realType.REALTYPE[sRealType]["장운영구분"]
+            value = self.dynamicCall("GetCommRealData(QString, int)", sCode, fid) # [GetCommRealData() 함수] 실시간시세 데이터 수신 이벤트인 OnReceiveRealData() 가 발생될때 실시간데이터를 얻어오는 함수입니다.\
+
+            if value == "0":
+                print("장 시작 전")
+
+            elif value == "3":
+                print("장 시작")
+
+            elif value == "2":
+                print("장 종료, 동시호가로 넘어감")
+
+            elif value == "4":
+                print("3시 30분 장 종료")
+
+        elif sRealType == "주식체결":
+            a = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['체결시간']) # hhmmss
+            b = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['현재가']) # +/-
+            b = abs(int(b))
+
+            c = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['전일대비']) # +/-
+            c = abs(int(c))
+
+            d = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['등락율']) 
+            d = float(d)
+
+            e = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['(최우선)매도호가'])
+            e = abs(int(e))
+
+            f = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['(최우선)매수호가'])
+            f = abs(int(f))
+
+            g = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['거래량'])
+            g = abs(int(g))
+
+            h = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['누적거래량'])
+            h = abs(int(h))
+
+            i = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['고가'])
+            i = abs(int(i))
+
+            j = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['시가'])
+            j = abs(int(j))
+
+            k = self.dynamicCall("GetCommRealData(QString, int)", sCode, self.realType.REALTYPE[sRealType]['저가'])
+            k = abs(int(k))
+
+            if sCode not in self.portfolio_stock_dict:
+                self.portfolio_stock_dict.update({sCode:{}})
+
+            self.portfolio_stock_dict[sCode].update({"체결시간": a})
+            self.portfolio_stock_dict[sCode].update({"현재가": b})
+            self.portfolio_stock_dict[sCode].update({"전일대비": c})
+            self.portfolio_stock_dict[sCode].update({"등락율": d})
+            self.portfolio_stock_dict[sCode].update({"(최우선)매도호가": e})
+            self.portfolio_stock_dict[sCode].update({"(최우선)매수호가": f})
+            self.portfolio_stock_dict[sCode].update({"거래량": g})
+            self.portfolio_stock_dict[sCode].update({"누적거래량": h})
+            self.portfolio_stock_dict[sCode].update({"고가": i})
+            self.portfolio_stock_dict[sCode].update({"시가": j})
+            self.portfolio_stock_dict[sCode].update({"저가": k})
+
+            print(self.portfolio_stock_dict[sCode])
+
+            # 계좌잔고평가내역에 있고 오늘 산 잔고에는 없을 경우
+            if sCode in self.account_stock_dict.keys() and sCode not in self.jango_dict.keys():
+                print("%s %s" % ("신규매도를 한다", sCode))
+
+                asd = self.account_stock_dict[sCode]
+
+                meme_rate = (b - asd["매입가"]) / asd["매입가"] * 100
+
+                if asd["매입가능수량"] > 0 and (meme_rate > 5 or meme_rate < -5):
+                    
+                    # [SendOrder() 함수] 서버에 주문을 전송하는 함수 입니다. 1초에 5회만 주문가능하며 그 이상 주문요청하면 에러 -308을 리턴합니다.
+                    order_success = self.dynamicCall("SendOrder(QString, QString, QString, int, QString, int, int, QStrin, QString)",
+                    "신규매도", self.portfolio_stock_dict.keys[sCode]["주문용스크린번호"], self.account_num, 2, sCode, asd["매매가능수량"], 0, self.realType.SENDTYPE["거래구분"]["시장가"], "") # 마지막에 원주문번호가 신규주문일 경우 공백 입력
+
+                    if order_success == "0": # 9개 인자값을 가진 주식주문 함수이며 리턴값이 0이면 성공이며 나머지는 에러입니다.
+                        print("주문 성공")
+                        del self.account_stock_dict[sCode]
+                    else:
+                        print("주문 실패")
+
+
+            # 오늘 산 잔고에 있을 경우
+            elif sCode in self.jango_dict.keys():
+                print("%s %s" % ("신규매도를 한다", sCode))
+
+            # 등락율이 2% 이상이고 오늘 산 잔고에 없을 경우
+            elif d > 2.0 and sCode not in self.jango_dict:
+                print("%s %s" % ("신규매수를 한다", sCode))
+
+            not_meme_list = list(self.not_account_stock_dict) # self.not_account_stock_dict.copy() 이렇게 해줘도 됨
+            for order_num in not_meme_list: # 계산 중에 업데이트 되어서 변동이 생기면 에러 발생할 수 있음, 그래서 새로 객체 지정해준것
+                code = self.not_account_stock_dict[order_num]["종목코드"]
+                meme_price = self.not_account_stock_dict[order_num]["주문가격"]
+                not_quantity = self.not_account_stock_dict[order_num]["미체결수량"]
+                meme_gubun = self.not_account_stock_dict[order_num]["매도수구분"]
+
+                if meme_gubun == "매수" and not_quantity > 0 and e > meme_price:
+                    print("%s %s" % ("매수취소 한다", sCode))
+
+                elif not_quantity == 0:
+                    del self.not_account_stock_dict[order_num]
+                
+    def chejan_slot(self, sGubun, nItemCnt, sFIdList):
+
+        if int(sGubun) == 0:
+            print("주문체결")
+        
+        elif int(sGubun) == 1:
+            print("잔고변경")
