@@ -1,0 +1,31 @@
+매매전략 끄적끄적
+
+
+1. MACD, RSI, Stochastic 지표를 통한 기술적 분석 전략: 우선 경험적 수치를 활용하고, 그동안 배운 것들을 활용해 업그레이드할 예정
+
+    MACD: Moving Average Convergence Divergence, 추세의 강도, 방향, 모멘텀 및 지속 시간의 변화를 측정(위키백과)
+        - 산출식: MACD = Long MA(26) - Short MA(12) # 괄호 안의 숫자는 days, 기간을 나타냄. 이하 동일
+        - 시그널: MACD MA(9)
+        - 조건식: MACD > 시그널
+
+    RSI: Relative Strength Index, 가격의 상승압력과 하락압력 간의 상대적 강도 측정(위키백과)
+        - 산출식: RSI(14) = RS / (1 + RS) = AU / (AU + AD)
+        - 주석: AU(Average U), AD(Average D), U(up, 상승한 날 상승분), D(down, 하락한 날 하락분), RS = AU / AD
+        - 조건식: RSI(t) > RSI(t-1) > 50 > RSI(t-2) 일 때 매수, RSI(t) < RSI(t-1) < 50 < RSI(t-2) 일 때 매도
+        - 기본설명: RSI는 50 이상이어야 함. 매수지점은 RSI가 50을 상향 돌파할 경우, 매도지점은 50을 하향 돌파할 경우
+
+    Stochastic Slow: 일정 기간 내 최고가와 최저가 범위 내에서 현재 가격의 위치를 측정
+        - 개념: Stochastic(%K, 5) = (현재가격 - 최저가) / (최고가 - 최저가), 노이즈가 많아 Slow Stochastic을 많이 사용(아래 설명)
+        - 산출식: Slow Stochastic = %K MA(3)
+        - 시그널: %D MA(3) = %K MA(3) MA(3)
+        - 조건식: Stochastic > 시그널 > 70 일 때 매수, Stochastic < 시그널 < 30 일 때 매도
+        - 기본설명: Slow Stochastic은 70을 상향 돌파할 때 매수, 30을 하향 돌파할 때 매도
+
+    종합
+        - 매수: MACD > 시그널 and RSI(t) > RSI(t-1) > 50 > RSI(t-2) and Stochastic > 시그널 > 70
+        - 매도: MACD < 시그널 and RSI(t) < RSI(t-1) < 50 < RSI(t-2) and Stochastic < 시그널 < 30
+
+    코드
+        - 종목선택: KODEX 레버리지, KODEX 코스피150 레버리지
+        - 기준지수: KOSPI200, KOSDAQ150
+        - 1) 각 지수의 분봉 수신, 2) 기술적 지표 계산, 3) 조건식 적용, 4) 매매 판단
